@@ -1,0 +1,22 @@
+{
+  "regression": {
+    "r2": 0.867,
+    "mae": 76898,
+    "median_error_percent": 10.1,
+    "within_80_percent": 20.9,
+    "houses_in_dataset": 21612
+  },
+  "classification": {
+    "accuracy": 0.829,
+    "cv_accuracy": 0.822,
+    "model": "Logistic Regression",
+    "labels": [
+      "Affordable",
+      "Mid-range",
+      "Premium"
+    ],
+    "cut_low": 360000.0,
+    "cut_high": 565000.0,
+    "houses_in_dataset": 21612
+  }
+}

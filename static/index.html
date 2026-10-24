@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>King County home price predictor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* =====================================================================
+     Colour tokens. Light is the default, dark follows the device setting.
+     ===================================================================== */
+  :root {
+    --bg: #F3F5FB;
+    --surface: #FFFFFF;
+    --field: #F7F8FD;
+    --ink: #0E1630;
+    --muted: #5B6683;
+    --line: #DDE2F0;
+    --line-strong: #C3CBE3;
+
+    --brand: #3445E8;          /* fills: buttons, selected segments */
+    --brand-text: #2735C4;     /* brand-coloured text on surfaces */
+    --brand-soft: #E7EAFF;
+    --brand-line: #B6BFFF;
+
+    --accent: #FF6A4D;         /* actual sale price */
+    --ok: #0E8F6E;  --ok-bg: #E1F6EF;
+    --warn: #9A5B00; --warn-bg: #FFF1D6;
+    --danger: #B42B26; --danger-bg: #FDECEA;
+
+    --hero-a: #0A1030;  --hero-b: #17237A;
+    --hero-line: rgba(255,255,255,.07);
+    --hero-ink: #FFFFFF; --hero-muted: #B8C2F0;
+    --shadow: 0 1px 2px rgba(14,22,48,.05), 0 12px 32px -12px rgba(14,22,48,.14);
+
+    --font: "Schibsted Grotesk", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #080D1F; --surface: #111836; --field: #0B1129;
+      --ink: #EDF0FF; --muted: #9AA6D0; --line: #232C57; --line-strong: #36427A;
+      --brand: #5566FF; --brand-text: #A3AEFF; --brand-soft: #1A2358; --brand-line: #3A47A8;
+      --accent: #FF7F66;
+      --ok: #4FD7AE; --ok-bg: #0F2E2A;
+      --warn: #F4C269; --warn-bg: #33270E;
+      --danger: #FF8E87; --danger-bg: #3A1618;
+      --hero-a: #060A1E; --hero-b: #121C6B;
+      --shadow: 0 0 0 1px rgba(255,255,255,.02), 0 16px 40px -16px rgba(0,0,0,.6);
+    }
+  }
+  /* ---------- Base ---------- */
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 400 16px/1.5 var(--font);
+    transition: background-color .3s;
+  }
+  h1, h2, h3, p { margin: 0; }
+  button, input, select { font: inherit; color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+  :focus-visible { outline: 3px solid var(--brand-line); outline-offset: 2px; }
+
+  /* ---------- Hero (blueprint grid + line-drawn house) ---------- */
+  .hero {
+    position: relative; overflow: hidden; color: var(--hero-ink);
+    background:
+      linear-gradient(var(--hero-line) 1px, transparent 1px) 0 0 / 32px 32px,
+      linear-gradient(90deg, var(--hero-line) 1px, transparent 1px) 0 0 / 32px 32px,
+      linear-gradient(135deg, var(--hero-a), var(--hero-b));
+    padding-bottom: 96px;
+    transition: background .4s;
+  }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; }
+  .brand svg { width: 28px; height: 28px; }
+  .toplink {
+    color: var(--hero-muted); text-decoration: none; font-weight: 600; font-size: .92rem;
+    padding: 8px 14px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px;
+  }
+  .toplink:hover { color: #fff; border-color: rgba(255,255,255,.4); }
+
+  .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 40px; align-items: center; padding-top: 24px; }
+  .hero h1 { font-size: clamp(2.1rem, 5.2vw, 3.6rem); font-weight: 800; line-height: 1.04; letter-spacing: -.035em; max-width: 16ch; }
+  .hero .intro { margin-top: 16px; max-width: 56ch; color: var(--hero-muted); font-size: 1.08rem; }
+
+  .house-art { width: 100%; max-width: 300px; justify-self: end; color: var(--hero-ink); }
+  .house-art path, .house-art rect, .house-art line, .house-art circle { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .house-art .faint { opacity: .35; }
+  .house-art .glow { stroke: var(--hero-muted); }
+  .draw { stroke-dasharray: 1; animation: draw 1.6s .15s ease backwards; }
+  @keyframes draw { from { stroke-dashoffset: 1; } }
+
+  /* ---------- Dataset facts: pulled up over the hero edge ---------- */
+  .facts {
+    position: relative; z-index: 2; margin-top: -56px;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
+  }
+  .fact { padding: 18px 22px; min-height: 84px; }
+  .fact + .fact { border-left: 1px solid var(--line); }
+  .fact b { display: block; font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+  .fact span { color: var(--muted); font-size: .88rem; }
+
+  /* ---------- Panels ---------- */
+  .panel { display: grid; grid-template-columns: minmax(0, 1fr) 410px; gap: 24px; align-items: start; padding: 24px 0 72px; }
+  .panel[hidden] { display: none; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); }
+  .form-card { padding: 8px 32px 32px; }
+
+  fieldset { border: 0; margin: 0; padding: 26px 0; min-width: 0; }
+  fieldset + fieldset { border-top: 1px solid var(--line); }
+  legend { padding: 0; float: left; width: 100%; font-size: 1.22rem; font-weight: 700; letter-spacing: -.015em; }
+  legend + * { clear: both; }
+  .section-sub { color: var(--muted); font-size: .94rem; margin: 2px 0 20px; max-width: 62ch; }
+
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 22px; align-items: start; }
+  .span-2 { grid-column: 1 / -1; }
+
+  /* ---------- Fields: label left, CSV column chip right ---------- */
+  .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+  .field-head label, .field-head .label { font-weight: 600; font-size: .95rem; }
+  .col {
+    font: 500 .72rem var(--mono); color: var(--brand-text); background: var(--brand-soft);
+    padding: 2px 8px; border-radius: 6px; white-space: nowrap;
+  }
+  .control { position: relative; }
+  input[type="number"], select {
+    width: 100%; height: 48px; padding: 0 14px;
+    font-weight: 500; font-size: 1rem;
+    background: var(--field); border: 1.5px solid var(--line); border-radius: 12px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  select {
+    appearance: none; -webkit-appearance: none; padding-right: 40px; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%238791B5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 16px center;
+  }
+  input[type="number"]:hover, select:hover { border-color: var(--line-strong); }
+  input[type="number"]:focus, select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); }
+  .has-unit input { padding-right: 56px; }
+  .unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: .86rem; pointer-events: none; }
+
+  .note { margin-top: 6px; font-size: .84rem; color: var(--muted); line-height: 1.4; }
+  .note.out { color: var(--warn); font-weight: 600; }
+  input.out { border-color: #E0A23A; background: var(--warn-bg); }
+
+  /* ---------- Segmented controls (floors, view, condition) ---------- */
+  .seg {
+    display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 4px; padding: 4px;
+    background: var(--field); border: 1.5px solid var(--line); border-radius: 12px;
+  }
+  .seg label { position: relative; display: block; }
+  .seg input { position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0; }
+  .seg span {
+    display: grid; place-items: center; min-height: 38px; padding: 4px 3px; text-align: center;
+    border-radius: 8px; font-weight: 600; font-size: .86rem; line-height: 1.15; color: var(--muted);
+    transition: background .15s, color .15s;
+  }
+  .seg label:hover span { color: var(--ink); }
+  .seg input:checked + span { background: var(--brand); color: #fff; box-shadow: 0 2px 8px -2px var(--brand); }
+  .seg input:focus-visible + span { outline: 3px solid var(--brand-line); outline-offset: 1px; }
+
+  /* ---------- Switches ---------- */
+  .switches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 22px; }
+  .switch {
+    display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 12px 14px;
+    background: var(--field); border: 1.5px solid var(--line); border-radius: 12px; position: relative;
+  }
+  .switch:hover { border-color: var(--line-strong); }
+  .switch input { position: absolute; opacity: 0; }
+  .switch .track { width: 44px; height: 26px; border-radius: 999px; background: var(--line-strong); position: relative; flex: none; transition: background .15s; }
+  .switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .switch input:checked + .track { background: var(--brand); }
+  .switch input:checked + .track::after { transform: translateX(18px); }
+  .switch input:focus-visible + .track { outline: 3px solid var(--brand-line); outline-offset: 2px; }
+  .switch .txt { display: flex; flex-direction: column; min-width: 0; font-weight: 600; font-size: .95rem; line-height: 1.25; }
+  .switch .txt .col { align-self: flex-start; margin-top: 4px; }
+
+  /* ---------- Buttons ---------- */
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; padding-top: 26px; border-top: 1px solid var(--line); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; border-radius: 12px; padding: 0 24px; height: 50px;
+    font-weight: 700; font-size: 1rem; cursor: pointer; border: 1.5px solid transparent;
+    transition: transform .1s, background .15s, box-shadow .15s;
+  }
+  .btn svg { width: 18px; height: 18px; flex: none; }
+  .btn.primary { background: var(--brand); color: #fff; box-shadow: 0 8px 20px -8px var(--brand); }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.primary:active { transform: translateY(1px); }
+  .btn.ghost { background: transparent; color: var(--brand-text); border-color: var(--brand-line); }
+  .btn.ghost:hover { background: var(--brand-soft); }
+  .btn.small { height: 38px; padding: 0 16px; font-size: .9rem; border-radius: 999px; }
+  .btn[disabled] { opacity: .6; cursor: progress; }
+
+
+  /* ---------- Result card ---------- */
+  .result { position: sticky; top: 20px; padding: 28px; overflow: hidden; }
+  .result::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 5px; background: linear-gradient(90deg, var(--brand), var(--accent)); }
+  .result h2 { font-size: .95rem; font-weight: 600; color: var(--muted); }
+  .empty { text-align: left; }
+  .empty svg { width: 76px; height: 76px; color: var(--brand); margin-bottom: 10px; }
+  .empty svg * { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .empty h2 { font-size: 1.35rem; color: var(--ink); font-weight: 700; letter-spacing: -.015em; }
+  .empty p { color: var(--muted); margin-top: 8px; }
+
+  .big { font-size: clamp(2.7rem, 6vw, 3.7rem); font-weight: 800; letter-spacing: -.045em; line-height: 1.05; margin: 8px 0 6px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .range-text { color: var(--muted); }
+  .range-text b { color: var(--ink); font-weight: 600; }
+
+  .scale { position: relative; height: 12px; background: var(--line); border-radius: 999px; margin: 34px 0 8px; }
+  .band { position: absolute; top: 0; bottom: 0; background: var(--brand-soft); border: 1.5px solid var(--brand); border-radius: 999px; transform-origin: left; animation: grow .6s ease both; }
+  @keyframes grow { from { transform: scaleX(0); } }
+  .mark { position: absolute; top: -6px; width: 4px; height: 24px; margin-left: -2px; border-radius: 3px; background: var(--ink); }
+  .mark.actual { background: var(--accent); width: 6px; margin-left: -3px; }
+  .ticks { display: flex; justify-content: space-between; font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; font-size: .84rem; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 18px; }
+  .chip { font-size: .8rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--field); border: 1px solid var(--line); color: var(--muted); }
+
+  .compare { margin-top: 18px; padding: 14px 16px; border-radius: 14px; font-size: .95rem; background: var(--warn-bg); }
+  .compare.good { background: var(--ok-bg); }
+  .compare b { font-weight: 700; }
+
+
+  .model-facts { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .model-facts h3 { font-size: .9rem; font-weight: 700; margin-bottom: 12px; }
+  .mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .mini div { padding: 10px 12px; border-radius: 12px; background: var(--field); border: 1px solid var(--line); }
+  .mini b { display: block; font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; }
+  .mini span { font-size: .76rem; color: var(--muted); line-height: 1.25; display: block; }
+  .model-facts p { margin-top: 12px; font-size: .86rem; color: var(--muted); }
+
+  .skeleton { display: grid; gap: 14px; }
+  .skeleton i { display: block; border-radius: 10px; background: linear-gradient(90deg, var(--line), var(--field), var(--line)) 0 0 / 200% 100%; animation: shimmer 1.2s linear infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  .error { color: var(--danger); background: var(--danger-bg); padding: 12px 14px; border-radius: 12px; font-weight: 600; font-size: .94rem; }
+  .banner { background: var(--danger-bg); color: var(--danger); padding: 14px 18px; border-radius: 14px; margin-top: 24px; font-weight: 600; }
+
+
+  /* ---------- Hero: the two models, side by side ---------- */
+  .hero-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 32px; }
+  .hero-pills span {
+    padding: 9px 16px; border-radius: 999px; font-size: .94rem; font-weight: 600; color: var(--hero-muted);
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+  }
+  .hero-pills b { color: #fff; font-weight: 700; }
+
+  /* ---------- Result blocks: price, then tier ---------- */
+  .result-block + .result-block { margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--line); }
+  .tier-name { font-size: clamp(1.9rem, 4vw, 2.4rem); font-weight: 800; letter-spacing: -.035em; line-height: 1.1; margin: 8px 0 4px; }
+  .tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+  .tier { display: grid; gap: 2px; align-content: start; padding: 12px; border: 1.5px solid var(--line); border-radius: 14px; background: var(--field); }
+  .tier.on { border-color: var(--brand); background: var(--brand-soft); }
+  .tier b { font-size: .92rem; font-weight: 700; }
+  .tier small { color: var(--muted); font-size: .76rem; line-height: 1.25; min-height: 2.5em; }
+  .tier .p { font-size: 1.3rem; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  .tier .meter { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 6px; }
+  .tier .meter i { display: block; height: 100%; background: var(--line-strong); border-radius: 999px; transform-origin: left; animation: grow .6s ease both; }
+  .tier.on .meter i { background: var(--brand); }
+  .model-facts h4 { margin: 14px 0 8px; font-size: .8rem; font-weight: 600; color: var(--muted); }
+  .model-facts h3 + h4 { margin-top: 0; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 1000px) {
+    .panel { grid-template-columns: 1fr; }
+    .result { position: static; }
+    .hero-grid { grid-template-columns: 1fr; }
+    .house-art { display: none; }
+  }
+  @media (max-width: 720px) {
+    .wrap { padding: 0 16px; }
+    .facts { grid-template-columns: repeat(2, 1fr); }
+    .fact:nth-child(3) { border-left: 0; }
+    .fact:nth-child(n+3) { border-top: 1px solid var(--line); }
+    .form-card { padding: 4px 20px 24px; }
+    .result { padding: 22px; }
+  }
+  @media (max-width: 560px) {
+    .grid, .switches { grid-template-columns: 1fr; }
+    .seg span { font-size: .78rem; }
+    .tiers { gap: 6px; }
+    .tier { padding: 10px; }
+    .btn { flex: 1 1 100%; justify-content: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13.5 14 4l11 9.5"/><path d="M6 12v11h16V12"/><path d="M11 23v-6h6v6"/></svg>
+        ML Predictor
+      </div>
+      <a class="toplink" href="/docs" target="_blank" rel="noopener">API docs</a>
+    </div>
+
+    <div class="hero-grid">
+      <div>
+        <h1>What’s a King County home worth?</h1>
+        <p class="intro" id="intro">Describe a house to get an estimated price and a price tier, learned from real home sales in King County, Washington (2014–2015).</p>
+        <div class="hero-pills">
+          <span><b>Regression</b> predicts the price</span>
+          <span><b>Classification</b> predicts the price tier</span>
+        </div>
+      </div>
+
+      <svg class="house-art" viewBox="0 0 300 240" aria-hidden="true">
+        <path class="faint" d="M10 214h280"/>
+        <path class="faint" d="M10 226h280"/>
+        <path class="draw" pathLength="1" d="M40 214V112L150 30l110 82v102z"/>
+        <path class="draw" pathLength="1" d="M26 118 150 24l124 94"/>
+        <path class="draw glow" pathLength="1" d="M122 214v-66h56v66"/>
+        <rect class="draw" pathLength="1" x="62" y="130" width="38" height="38" rx="2"/>
+        <rect class="draw" pathLength="1" x="200" y="130" width="38" height="38" rx="2"/>
+        <circle class="draw glow" pathLength="1" cx="150" cy="86" r="14"/>
+        <path class="draw glow" pathLength="1" d="M60 214v-30M52 190h16M246 214v-30"/>
+      </svg>
+
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="facts" id="facts" aria-label="About the data and models">
+    <div class="fact"><b>–</b><span>real home sales</span></div>
+    <div class="fact"><b>–</b><span>zip codes covered</span></div>
+    <div class="fact"><b>–</b><span>R² for the price estimate</span></div>
+    <div class="fact"><b>–</b><span>price tier correct on unseen houses</span></div>
+  </section>
+  <div id="serverBanner" class="banner" hidden></div>
+
+  <!-- ================= HOUSE PRICE ================= -->
+  <section class="panel" id="housePanel">
+    <form class="card form-card" id="houseForm" novalidate>
+
+      <fieldset>
+        <legend>Location</legend>
+        <p class="section-sub">Where a house is matters more than almost anything else. The model learned a price level for each zip code.</p>
+        <div class="field">
+          <div class="field-head"><label for="zipcode">Zip code</label><code class="col">zipcode</code></div>
+          <div class="control"><select id="zipcode" required><option value="">Choose a zip code</option></select></div>
+          <p class="note" id="zipNote">Loading zip codes from the dataset…</p>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Size and layout</legend>
+        <p class="section-sub">Rooms, floor space and land. The grey note under each field shows the range found in the dataset.</p>
+        <div class="grid">
+          <div class="field">
+            <div class="field-head"><label for="bedrooms">Bedrooms</label><code class="col">bedrooms</code></div>
+            <div class="control"><input id="bedrooms" type="number" inputmode="numeric" min="0" max="11" step="1" value="3" data-label="bedrooms"></div>
+            <p class="note" data-note-for="bedrooms"></p>
+          </div>
+          <div class="field">
+            <div class="field-head"><label for="bathrooms">Bathrooms</label><code class="col">bathrooms</code></div>
+            <div class="control"><input id="bathrooms" type="number" inputmode="decimal" min="0" max="8" step="0.25" value="2.25" data-label="bathrooms"></div>
+            <p class="note" data-note-for="bathrooms"></p>
+          </div>
+          <div class="field">
+            <div class="field-head"><label for="sqft_living">Living area</label><code class="col">sqft_living</code></div>
+            <div class="control has-unit"><input id="sqft_living" type="number" inputmode="numeric" min="290" max="13540" step="10" value="1900" data-label="living area"><span class="unit">sq ft</span></div>
+            <p class="note" data-note-for="sqft_living"></p>
+          </div>
+          <div class="field">
+            <div class="field-head"><label for="sqft_lot">Land size</label><code class="col">sqft_lot</code></div>
+            <div class="control has-unit"><input id="sqft_lot" type="number" inputmode="numeric" min="520" max="1651359" step="100" value="7600" data-label="land size"><span class="unit">sq ft</span></div>
+            <p class="note" data-note-for="sqft_lot"></p>
+          </div>
+          <div class="field">
+            <div class="field-head"><label for="sqft_basement">Basement</label><code class="col">sqft_basement</code></div>
+            <div class="control has-unit"><input id="sqft_basement" type="number" inputmode="numeric" min="0" max="4820" step="10" value="0" data-label="basement"><span class="unit">sq ft</span></div>
+            <p class="note" data-note-for="sqft_basement">Enter 0 if there is no basement.</p>
+          </div>
+          <div class="field">
+            <div class="field-head"><label for="yr_built">Year built</label><code class="col">yr_built</code></div>
+            <div class="control"><input id="yr_built" type="number" inputmode="numeric" min="1900" max="2015" step="1" value="1975" data-label="year built"></div>
+            <p class="note" data-note-for="yr_built"></p>
+          </div>
+          <div class="field span-2">
+            <div class="field-head"><span class="label" id="floorsLabel">Floors</span><code class="col">floors</code></div>
+            <div class="seg" style="--n:6" role="radiogroup" aria-labelledby="floorsLabel">
+              <label><input type="radio" name="floors" value="1" checked><span>1</span></label>
+              <label><input type="radio" name="floors" value="1.5"><span>1.5</span></label>
+              <label><input type="radio" name="floors" value="2"><span>2</span></label>
+              <label><input type="radio" name="floors" value="2.5"><span>2.5</span></label>
+              <label><input type="radio" name="floors" value="3"><span>3</span></label>
+              <label><input type="radio" name="floors" value="3.5"><span>3.5</span></label>
+            </div>
+            <p class="note">Levels above ground. A half floor is a partial upper level, like a loft.</p>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Quality and extras</legend>
+        <p class="section-sub">These use the same rating scales as the King County records, so choose the closest match.</p>
+        <div class="grid">
+          <div class="field span-2">
+            <div class="field-head"><label for="grade">Build quality</label><code class="col">grade</code></div>
+            <div class="control">
+              <select id="grade">
+                <option value="1">1 – Below building code</option>
+                <option value="3">3 – Below building code</option>
+                <option value="4">4 – Older, low quality</option>
+                <option value="5">5 – Fair, low construction cost</option>
+                <option value="6">6 – Lowest grade meeting code</option>
+                <option value="7" selected>7 – Average (most common)</option>
+                <option value="8">8 – Just above average</option>
+                <option value="9">9 – Better design and materials</option>
+                <option value="10">10 – Very good, higher-grade finishes</option>
+                <option value="11">11 – Custom design, excellent finishes</option>
+                <option value="12">12 – Luxury custom design</option>
+                <option value="13">13 – Mansion</option>
+              </select>
+            </div>
+            <p class="note">King County’s 1–13 building grade. Grade 2 doesn’t exist in the data.</p>
+          </div>
+
+          <div class="field span-2">
+            <div class="field-head"><span class="label" id="conditionLabel">Condition today</span><code class="col">condition</code></div>
+            <div class="seg" style="--n:5" role="radiogroup" aria-labelledby="conditionLabel">
+              <label><input type="radio" name="condition" value="1"><span>Poor</span></label>
+              <label><input type="radio" name="condition" value="2"><span>Fair</span></label>
+              <label><input type="radio" name="condition" value="3" checked><span>Average</span></label>
+              <label><input type="radio" name="condition" value="4"><span>Good</span></label>
+              <label><input type="radio" name="condition" value="5"><span>Very good</span></label>
+            </div>
+            <p class="note">State of repair right now, rated 1 to 5.</p>
+          </div>
+
+          <div class="field span-2">
+            <div class="field-head"><span class="label" id="viewLabel">View</span><code class="col">view</code></div>
+            <div class="seg" style="--n:5" role="radiogroup" aria-labelledby="viewLabel">
+              <label><input type="radio" name="view" value="0" checked><span>None</span></label>
+              <label><input type="radio" name="view" value="1"><span>Fair</span></label>
+              <label><input type="radio" name="view" value="2"><span>Average</span></label>
+              <label><input type="radio" name="view" value="3"><span>Good</span></label>
+              <label><input type="radio" name="view" value="4"><span>Excellent</span></label>
+            </div>
+            <p class="note">How good the outlook is, rated 0 to 4.</p>
+          </div>
+
+          <div class="switches span-2">
+            <label class="switch">
+              <input id="waterfront" type="checkbox"><span class="track"></span>
+              <span class="txt">Waterfront<code class="col">waterfront</code></span>
+            </label>
+            <label class="switch">
+              <input id="renovated" type="checkbox"><span class="track"></span>
+              <span class="txt">Has been renovated<code class="col">yr_renovated &gt; 0</code></span>
+            </label>
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="actions">
+        <button class="btn primary" type="submit" id="estimateBtn">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14l4-4 3 3 7-7"/><path d="M12 6h5v5"/></svg>
+          Predict price and tier
+        </button>
+        <button class="btn ghost" type="button" id="realBtn">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10a6 6 0 0 1 10.5-4M16 10a6 6 0 0 1-10.5 4"/><path d="M15 2v4h-4M5 18v-4h4"/></svg>
+          Try a real sale from the dataset
+        </button>
+      </div>
+    </form>
+
+    <aside class="card result" aria-live="polite" id="houseResult">
+      <div id="houseOutput">
+        <div class="empty">
+          <svg viewBox="0 0 76 76" aria-hidden="true"><path d="M10 36 38 12l28 24"/><path d="M16 32v32h44V32"/><path d="M32 64V46h12v18"/></svg>
+          <h2>Your prediction will appear here</h2>
+          <p>Fill in the form and choose “Predict price and tier”, or load a real sale from the dataset to see how close the models get to what it really sold for.</p>
+        </div>
+      </div>
+      <div class="model-facts" id="houseAccuracy"></div>
+    </aside>
+  </section>
+
+</main>
+
+<script>
+  // Served by FastAPI, "" means "same server". Opened straight from disk, talk to the local server.
+  const API = location.protocol === "file:" ? "http://127.0.0.1:8000" : "";
+  const $ = (id) => document.getElementById(id);
+  const money = (n) => "$" + Math.round(n).toLocaleString("en-US");
+  const moneyK = (n) => "$" + Math.round(n / 1000) + "K";
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fmt = (n) => Number(n).toLocaleString("en-US");
+
+  let tierInfo = null;   // tier names + cut-off prices, loaded from /options (they come from the CSV)
+
+  // ---------- Talking to the backend ----------
+  async function callApi(path, body) {
+    let response;
+    try {
+      response = await fetch(API + path, body
+        ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+        : undefined);
+    } catch (err) {
+      throw new Error("Can’t reach the server. Start it with “uvicorn main:app --reload”, then refresh this page.");
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(readError(data));
+    return data;
+  }
+
+  function readError(data) {
+    if (typeof data.detail === "string") return data.detail;
+    if (Array.isArray(data.detail)) {
+      return "Please check these values: " + data.detail
+        .map((d) => String(d.loc[d.loc.length - 1]).replace(/_/g, " ") + " (" + d.msg + ")").join("; ");
+    }
+    return "Something went wrong. Please try again.";
+  }
+
+  // ---------- What the dataset contains, per column (from kc_house_data.csv) ----------
+  // Used for the little range notes under each field and the "outside the data" warning.
+  const RANGES = {
+    bedrooms:      { min: 0,   max: 11,      text: "Dataset range 0 to 11." },
+    bathrooms:     { min: 0,   max: 8,       text: "Dataset range 0 to 8. A 0.75 bath has a shower but no tub." },
+    sqft_living:   { min: 290, max: 13540,   text: "Dataset range 290 to 13,540 sq ft. Most homes are 940 to 3,760." },
+    sqft_lot:      { min: 520, max: 1651359, text: "Dataset range 520 to 1,651,359 sq ft. Most plots are under 43,000." },
+    sqft_basement: { min: 0,   max: 4820,    text: "Dataset range 0 to 4,820 sq ft." },
+    yr_built:      { min: 1900, max: 2015,   text: "Dataset range 1900 to 2015." },
+  };
+
+  function checkRange(input) {
+    const r = RANGES[input.id];
+    if (!r) return;
+    const note = document.querySelector('[data-note-for="' + input.id + '"]');
+    const v = input.value === "" ? null : Number(input.value);
+    const out = v !== null && (v < r.min || v > r.max);
+    input.classList.toggle("out", out);
+    note.classList.toggle("out", out);
+    note.textContent = out
+      ? "Outside the data the models learned from (" + fmt(r.min) + " to " + fmt(r.max) + "). Treat the result with caution."
+      : (input.id === "sqft_basement" ? "Enter 0 if there is no basement. " : "") + r.text;
+  }
+  Object.keys(RANGES).forEach((id) => {
+    $(id).addEventListener("input", () => checkRange($(id)));
+    checkRange($(id));
+  });
+
+  // ---------- Load zip codes + accuracy scores (the backend reads the CSV) ----------
+  async function loadOptions() {
+    try {
+      const info = await callApi("/options");
+      const select = $("zipcode");
+      info.zipcodes.forEach((zip) => select.add(new Option(zip, zip)));
+      $("zipNote").textContent = info.zipcodes.length + " zip codes appear in the dataset, from " + info.zipcodes[0] + " to " + info.zipcodes[info.zipcodes.length - 1] + ".";
+
+      const r = info.metrics.regression, c = info.metrics.classification;
+      tierInfo = c;
+
+      const cells = document.querySelectorAll("#facts .fact");
+      [[fmt(r.houses_in_dataset)], [String(info.zipcodes.length)], [r.r2.toFixed(2)], [(c.accuracy * 100).toFixed(1) + "%"]]
+        .forEach((v, i) => (cells[i].querySelector("b").textContent = v[0]));
+
+      $("intro").textContent = "Describe a house to get an estimated price and a price tier, learned from " + fmt(r.houses_in_dataset) +
+        " real home sales in King County, Washington (2014–2015).";
+
+      $("houseAccuracy").innerHTML =
+        "<h3>How accurate is this?</h3>" +
+        "<h4>Price estimate (regression)</h4>" +
+        '<div class="mini">' +
+          "<div><b>" + money(r.mae) + "</b><span>average miss (MAE)</span></div>" +
+          "<div><b>" + r.r2 + "</b><span>R², 1.0 is perfect</span></div>" +
+          "<div><b>" + r.within_80_percent + "%</b><span>range for 8 in 10 homes</span></div>" +
+        "</div>" +
+        "<h4>Price tier (classification)</h4>" +
+        '<div class="mini">' +
+          "<div><b>" + (c.accuracy * 100).toFixed(1) + "%</b><span>correct on unseen houses</span></div>" +
+          "<div><b>" + Math.round(c.cv_accuracy * 100) + "%</b><span>cross-validation</span></div>" +
+          "<div><b>3</b><span>tiers of equal size</span></div>" +
+        "</div>" +
+        "<p>Both were scored on houses the models never saw during training. Tier model: " + esc(c.model) + ".</p>";
+    } catch (err) {
+      $("zipNote").textContent = "Zip codes could not be loaded.";
+      showBanner(err.message);
+    }
+  }
+
+  function showBanner(message) {
+    $("serverBanner").textContent = message;
+    $("serverBanner").hidden = false;
+  }
+
+  // On narrow screens the result sits below the form, so scroll it into view.
+  function revealResult(id) {
+    if (window.innerWidth > 1000) return;
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    $(id).scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+  }
+
+  // ---------- Reading and filling the form ----------
+  const numberFields = ["bedrooms", "bathrooms", "sqft_living", "sqft_lot", "sqft_basement", "yr_built"];
+  const radioFields = ["floors", "view", "condition"];
+  const radioValue = (name) => document.querySelector('input[name="' + name + '"]:checked').value;
+
+  function readHouse() {
+    const house = { zipcode: $("zipcode").value };
+    numberFields.forEach((name) => (house[name] = $(name).value === "" ? NaN : Number($(name).value)));
+    radioFields.forEach((name) => (house[name] = Number(radioValue(name))));
+    house.grade = Number($("grade").value);
+    house.waterfront = $("waterfront").checked ? 1 : 0;
+    house.renovated = $("renovated").checked ? 1 : 0;
+    return house;
+  }
+
+  function fillHouse(house) {
+    $("zipcode").value = house.zipcode;
+    numberFields.forEach((name) => { $(name).value = house[name]; checkRange($(name)); });
+    radioFields.forEach((name) => {
+      const radio = document.querySelector('input[name="' + name + '"][value="' + house[name] + '"]');
+      if (radio) radio.checked = true;
+    });
+    $("grade").value = house.grade;
+    $("waterfront").checked = house.waterfront === 1;
+    $("renovated").checked = house.renovated === 1;
+  }
+
+  function showHouse(html) { $("houseOutput").innerHTML = html; }
+  const errorHtml = (message) => '<div class="error">' + esc(message) + "</div>";
+  const skeleton = '<div class="skeleton" aria-label="Working out the prediction"><i style="height:16px;width:40%"></i><i style="height:56px;width:80%"></i><i style="height:14px;width:65%"></i><i style="height:12px"></i><i style="height:90px;margin-top:14px"></i></div>';
+
+  function checkHouse(house) {
+    if (!house.zipcode) return "Choose a zip code first.";
+    const missing = numberFields.find((n) => Number.isNaN(house[n]));
+    if (missing) return "Enter a value for " + $(missing).dataset.label + ".";
+    if (house.sqft_basement > house.sqft_living) return "The basement can’t be bigger than the living area.";
+    return null;
+  }
+
+  // ---------- Predict: regression (price) + classification (tier) ----------
+  async function predict(actualPrice = null) {
+    const house = readHouse();
+    const problem = checkHouse(house);
+    if (problem) { showHouse(errorHtml(problem)); return; }
+
+    $("estimateBtn").disabled = $("realBtn").disabled = true;
+    showHouse(skeleton);
+    try {
+      // Both models get the same house, so ask them at the same time.
+      const [price, tier] = await Promise.all([
+        callApi("/predict/regression", house),
+        callApi("/predict/classification", house),
+      ]);
+      showResult(price, tier, actualPrice, house);
+    } catch (err) {
+      showHouse(errorHtml(err.message));
+    } finally {
+      $("estimateBtn").disabled = $("realBtn").disabled = false;
+    }
+  }
+
+  // Which tier does a real price fall in? (uses the cut-off prices saved at training time)
+  function tierOf(price) {
+    const [a, b, c] = tierInfo.labels;
+    return price < tierInfo.cut_low ? a : price < tierInfo.cut_high ? b : c;
+  }
+
+  function tierRanges() {
+    return [
+      "Under " + moneyK(tierInfo.cut_low),
+      moneyK(tierInfo.cut_low) + " to " + moneyK(tierInfo.cut_high),
+      "Over " + moneyK(tierInfo.cut_high),
+    ];
+  }
+
+  function showResult(r, t, actual, house) {
+    // Scale the bar so it can show the range and, if we have one, the real sale price.
+    const lowest = Math.min(r.low, actual ?? r.low) * 0.92;
+    const highest = Math.max(r.high, actual ?? r.high) * 1.08;
+    const at = (v) => ((v - lowest) / (highest - lowest)) * 100;
+
+    const chips = [
+      house.bedrooms + " bed", house.bathrooms + " bath", fmt(house.sqft_living) + " sq ft",
+      house.floors + (house.floors === 1 ? " floor" : " floors"), "Grade " + house.grade, "Zip " + house.zipcode,
+      house.waterfront ? "Waterfront" : null, house.renovated ? "Renovated" : null,
+    ].filter(Boolean).map((x) => '<span class="chip">' + esc(x) + "</span>").join("");
+
+    // --- block 1: regression ---
+    let html = '<div class="result-block">' +
+      "<h2>Estimated sale price</h2>" +
+      '<div class="big" id="bigPrice">' + money(r.predicted_price) + "</div>" +
+      '<p class="range-text">Most likely between <b>' + money(r.low) + "</b> and <b>" + money(r.high) + "</b></p>" +
+      '<div class="scale"><div class="band" style="left:' + at(r.low) + "%;width:" + (at(r.high) - at(r.low)) + '%"></div>' +
+      '<div class="mark" style="left:' + at(r.predicted_price) + '%"></div>' +
+      (actual ? '<div class="mark actual" style="left:' + at(actual) + '%"></div>' : "") + "</div>" +
+      '<div class="ticks"><span>' + money(r.low) + "</span><span>" + money(r.high) + "</span></div>" +
+      '<div class="legend"><span><i style="background:var(--ink)"></i>Our estimate</span>' +
+      '<span><i style="background:var(--brand-soft);border:1.5px solid var(--brand)"></i>Likely range (' + r.range_percent + "%)</span>" +
+      (actual ? '<span><i style="background:var(--accent)"></i>Actual sale</span>' : "") + "</div>" +
+      '<div class="chips">' + chips + "</div></div>";
+
+    // --- block 2: classification ---
+    const ranges = tierRanges();
+    const cells = tierInfo.labels.map((name, i) => {
+      const p = t.probabilities[name] || 0;
+      return '<div class="tier' + (name === t.tier ? " on" : "") + '"><b>' + esc(name) + "</b><small>" + esc(ranges[i]) + "</small>" +
+        '<span class="p">' + Math.round(p * 100) + '%</span><div class="meter"><i style="width:' + p * 100 + '%"></i></div></div>';
+    }).join("");
+    html += '<div class="result-block"><h2>Price tier</h2>' +
+      '<div class="tier-name">' + esc(t.tier) + "</div>" +
+      '<p class="range-text">The model is <b>' + Math.round(t.confidence * 100) + "% sure</b>.</p>" +
+      '<div class="tiers">' + cells + "</div></div>";
+
+    // --- how did we do against the real sale? ---
+    if (actual) {
+      const miss = r.predicted_price - actual;
+      const percent = Math.abs(miss) / actual * 100;
+      const inside = actual >= r.low && actual <= r.high;
+      const realTier = tierOf(actual), tierRight = realTier === t.tier;
+      html += '<div class="compare ' + (inside && tierRight ? "good" : "") + '">This house really sold for <b>' + money(actual) +
+        "</b>. The price estimate was " + (miss >= 0 ? "higher" : "lower") + " by <b>" + money(Math.abs(miss)) +
+        "</b> (" + percent.toFixed(1) + "%), " + (inside ? "inside" : "outside") + " the likely range. " +
+        "Its real tier is <b>" + esc(realTier) + "</b>, so the tier prediction was " + (tierRight ? "<b>correct</b>." : "<b>wrong</b>.") + "</div>";
+    }
+    showHouse(html);
+    countUp($("bigPrice"), r.predicted_price);
+    revealResult("houseResult");
+  }
+
+  // The price counts up to its value: a small cue that something just changed.
+  function countUp(element, target) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const start = performance.now(), duration = 600;
+    function tick(now) {
+      const t = Math.min((now - start) / duration, 1);
+      element.textContent = money(target * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) requestAnimationFrame(tick); else element.textContent = money(target);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  $("houseForm").addEventListener("submit", (event) => { event.preventDefault(); predict(); });
+
+  $("realBtn").addEventListener("click", async () => {
+    $("estimateBtn").disabled = $("realBtn").disabled = true;
+    showHouse(skeleton);
+    try {
+      const sample = await callApi("/sample");     // a random row from kc_house_data.csv
+      fillHouse(sample.inputs);
+      await predict(sample.actual_price);
+    } catch (err) {
+      showHouse(errorHtml(err.message));
+      $("estimateBtn").disabled = $("realBtn").disabled = false;
+    }
+  });
+
+  loadOptions();
+</script>
+</body>
+</html>
